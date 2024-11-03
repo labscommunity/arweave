@@ -18,7 +18,8 @@
 	 get_cm_partition_table/1, cm_h1_send/2, cm_h2_send/2,
 	 cm_publish_send/2, get_jobs/2, post_partial_solution/2,
 	 get_pool_cm_jobs/2, post_pool_cm_jobs/2,
-	 post_cm_partition_table_to_pool/2]).
+	 post_cm_partition_table_to_pool/2,
+	 store_chunk/4, retrieve_chunk/3]).
 -export([get_block_shadow/2, get_block_shadow/3, get_block_shadow/4]).
 
 -include_lib("arweave/include/ar.hrl").
@@ -1147,6 +1148,45 @@ get_peers(Peer) ->
 	catch _:_ -> unavailable
 	end.
 
+store_chunk(Peer, Chunk, StoreId, ChunkIndex) ->
+	Path = lists:concat(["/stores/", StoreId, "/chunks/", ChunkIndex]),
+    Body = crypto:strong_rand_bytes(?DATA_CHUNK_SIZE),
+	case
+		ar_http:req(#{
+			method => post,
+			peer => Peer,
+			path => Path,
+			body => Body,
+			headers => [{"Content-Type", "application/octet-stream"}],
+			connect_timeout => 1000,
+			timeout => 2 * 1000
+		})
+	of
+		{ok, {{<<"200">>, _}, _, JSON, _, _}} ->
+			case ar_serialize:json_decode(JSON, [return_maps]) of
+				{ok, JsonMap} ->
+					JsonMap;
+				{error, _} ->
+					info_unavailable
+			end;
+		_ -> info_unavailable
+	end.
+
+retrieve_chunk(Peer, StoreId, ChunkIndex) ->
+	Path = lists:concat(["/stores/", StoreId, "/chunks/", ChunkIndex]),
+	case
+		ar_http:req(#{
+			method => get,
+			peer => Peer,
+			path => Path,
+			connect_timeout => 1000,
+			timeout => 2 * 1000
+		})
+	of
+		{ok, Response} ->
+			?LOG_DEBUG(Response);
+		_ -> info_unavailable
+	end.
 
 %% @doc Process the response of an /block call.
 handle_block_response(_Peer, _Encoding, {ok, {{<<"400">>, _}, _, _, _, _}}) ->
